@@ -1,0 +1,100 @@
+name: Build (Nintendo Switch)
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ "v*" ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-switch:
+    runs-on: ubuntu-latest
+
+    # devkitPro toolchain + libnx + switch-tools preinstalled
+    container:
+      image: devkitpro/devkita64:latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # The devkitPro container is usually minimal; ensure CMake/Ninja exist.
+      - name: Install build deps
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if command -v apt-get >/dev/null 2>&1; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              cmake ninja-build git ca-certificates
+          elif command -v pacman >/dev/null 2>&1; then
+            pacman -Syu --noconfirm
+            pacman -S --noconfirm --needed cmake ninja git
+          fi
+
+      - name: Configure
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/Switch.cmake" \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake --build build -j"$(nproc)"
+
+      - name: Package NRO(s)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p dist
+
+          # Find produced ELFs and convert each to an NRO.
+          # If your build already outputs an .nro, this will still upload it.
+          mapfile -d '' elfs < <(find build -type f -name "*.elf" -print0 || true)
+          mapfile -d '' nros < <(find build -type f -name "*.nro" -print0 || true)
+
+          if [ "${#elfs[@]}" -eq 0 ] && [ "${#nros[@]}" -eq 0 ]; then
+            echo "No .elf or .nro found under build/. Check your CMake targets/output names."
+            exit 1
+          fi
+
+          # Convert ELFs -> NROs
+          for elf in "${elfs[@]}"; do
+            base="$(basename "${elf%.*}")"
+            nacp="dist/${base}.nacp"
+            out="dist/${base}.nro"
+
+            # Basic metadata; change strings if you want.
+            nacptool --create "${base}" "${base}" "0.0.0" "$nacp"
+            elf2nro "$elf" "$out" --nacp="$nacp"
+          done
+
+          # Copy any already-built NROs too
+          for nro in "${nros[@]}"; do
+            cp -f "$nro" dist/
+          done
+
+          ls -lah dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: switch-build
+          path: dist/*
+
+      # Create a GitHub Release when you push a tag like v0.1.0
+      - name: Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
