@@ -24,6 +24,28 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Patch ImPlot timegm for Switch
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          f="Externals/implot/implot/implot.cpp"
+
+          echo "=== Showing MkGmtTime area BEFORE patch ==="
+          sed -n '870,895p' "$f"
+
+          # Replace the single line: t.S = timegm(ptm);
+          perl -i -pe 's/^\s*t\.S\s*=\s*timegm\(ptm\);\s*$/#if defined(__SWITCH__)\n    \/\/ libnx\/newlib doesn\x27t provide timegm(). Treat ptm as UTC.\n    auto days_from_civil = [](int y, unsigned m, unsigned d) -> int64_t {\n        y -= m <= 2;\n        const int era = (y >= 0 ? y : y - 399) \/ 400;\n        const unsigned yoe = (unsigned)(y - era * 400);\n        const unsigned doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) \/ 5 + d - 1;\n        const unsigned doe = yoe * 365 + yoe \/ 4 - yoe \/ 100 + doy;\n        return (int64_t)era * 146097 + (int64_t)doe - 719468;\n    };\n    const int y = ptm->tm_year + 1900;\n    const unsigned mon = (unsigned)(ptm->tm_mon + 1);\n    const unsigned day = (unsigned)ptm->tm_mday;\n    const int64_t days = days_from_civil(y, mon, day);\n    t.S = (time_t)(days * 86400LL + (int64_t)ptm->tm_hour * 3600LL + (int64_t)ptm->tm_min * 60LL + (int64_t)ptm->tm_sec);\n#else\n    t.S = timegm(ptm);\n#endif/sm' "$f"
+
+          echo "=== Showing MkGmtTime area AFTER patch ==="
+          sed -n '870,910p' "$f"
+
+          # Hard fail if the exact call still exists
+          if grep -q "timegm(ptm)" "$f"; then
+            echo "Patch failed: timegm(ptm) still present in $f"
+            exit 1
+          fi
+
       - name: Force ImPlot submodule to master
         shell: bash
         run: |
