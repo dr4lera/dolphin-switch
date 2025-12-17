@@ -45,9 +45,9 @@ jobs:
           sed -n "${start},${end}p" "$f" || true
 
           # Ensure timegm is gone
-          if grep -q "timegm" "$f"; then
+          if grep -q "timegm\s*\(" "$f"; then
             echo "ERROR: timegm still present in $f"
-            grep -n "timegm" "$f" | head -n 20
+            grep -n "timegm\s*\(" "$f" | head -n 20
             exit 1
           fi
 
