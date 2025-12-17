@@ -48,6 +48,7 @@
 [submodule "Externals/implot/implot"]
 	path = Externals/implot/implot
 	url = https://github.com/dr4lera/implot.git
+	branch = master
 [submodule "Externals/gtest"]
 	path = Externals/gtest
 	url = https://github.com/google/googletest.git
