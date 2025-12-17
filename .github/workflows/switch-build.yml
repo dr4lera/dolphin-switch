@@ -23,6 +23,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Force ImPlot submodule to master
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd Externals/implot
+          git fetch origin
+          git checkout master
+          git pull origin master
+          cd ../..
 
       # The devkitPro container is usually minimal; ensure CMake/Ninja exist.
       - name: Install build deps
